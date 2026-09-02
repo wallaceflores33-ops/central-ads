@@ -18,23 +18,29 @@ import {
   ExternalLink,
   Tag,
   Target,
-  FileText
+  FileText,
+  Trash2
 } from "lucide-react";
+import { ConfirmationModal } from "../components/ConfirmationModal.tsx";
 
 interface ProductsViewProps {
   products: ProductMetricSummary[];
   onSelectProduct: (productId: string) => void;
   onCreateProduct: (productData: any) => void;
+  onDeleteProduct?: (productId: string) => void;
 }
 
 export const ProductsView: React.FC<ProductsViewProps> = ({
   products,
   onSelectProduct,
   onCreateProduct,
+  onDeleteProduct,
 }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // New product form state
   const [newProdName, setNewProdName] = useState("");
@@ -88,6 +94,23 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
     setNewCaktoIds("");
     setNewCaktoOffers("");
     setNewBumps("");
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return;
+    setIsDeleting(true);
+    try {
+      if (onDeleteProduct) {
+        await onDeleteProduct(deleteTarget.id);
+      } else {
+        await fetch(`/api/products/${deleteTarget.id}`, { method: "DELETE" });
+      }
+      setDeleteTarget(null);
+    } catch (err) {
+      console.error("Erro ao excluir produto:", err);
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   return (
@@ -228,16 +251,28 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                     </td>
 
                     <td className="py-3 px-4 text-center">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onSelectProduct(p.productId);
-                        }}
-                        className="flex items-center gap-1 px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-300 group-hover:text-white transition-all mx-auto cursor-pointer"
-                      >
-                        <span>Abrir Ficha</span>
-                        <ChevronRight className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="flex items-center justify-center gap-1.5">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectProduct(p.productId);
+                          }}
+                          className="flex items-center gap-1 px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-300 group-hover:text-white transition-all cursor-pointer"
+                        >
+                          <span>Abrir Ficha</span>
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleteTarget({ id: p.productId, name: p.productName });
+                          }}
+                          title="Excluir Produto"
+                          className="p-1.5 rounded bg-slate-800/80 hover:bg-rose-950/60 text-slate-400 hover:text-rose-400 border border-slate-700/50 hover:border-rose-500/40 transition-all cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -398,6 +433,19 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Confirmation Modal for Product Deletion */}
+      <ConfirmationModal
+        isOpen={Boolean(deleteTarget)}
+        title="Tem certeza que deseja excluir este produto?"
+        itemName={deleteTarget ? deleteTarget.name : undefined}
+        description="O produto será removido e desvinculado de suas campanhas. O histórico financeiro, transações da Cakto e métricas consolidadas permanecerão preservados no sistema."
+        confirmLabel="Excluir Produto"
+        cancelLabel="Cancelar"
+        isProcessing={isDeleting}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 };

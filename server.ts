@@ -4,6 +4,7 @@ import { createServer as createViteServer } from "vite";
 import { store } from "./server/store.ts";
 import { generateAIAnalysis } from "./server/gemini.ts";
 import { metaApi } from "./server/metaApi.ts";
+import { caktoApi } from "./server/caktoApi.ts";
 import { supabaseService } from "./server/supabase.ts";
 import { PeriodFilter } from "./src/types/index.ts";
 
@@ -13,6 +14,7 @@ async function startServer() {
 
   // Parse JSON bodies with limit for raw webhook payloads
   app.use(express.json({ limit: "5mb" }));
+  app.use(express.urlencoded({ extended: true, limit: "5mb" }));
 
   // API Health check
   app.get("/api/health", (req, res) => {
@@ -52,19 +54,337 @@ async function startServer() {
     res.json(result);
   });
 
-  // Real Meta sync
+  // Real Meta sync (Business Managers -> Ad Accounts -> Campaigns -> Daily Insights)
   app.post("/api/sync/meta", async (req, res) => {
     const token = req.body?.accessToken;
     const result = await store.syncMeta(token);
     res.json({ ...result, status: store.getIntegrationStatus() });
   });
 
-  // Real Full Sync (Meta + Supabase)
+  // Meta Diagnostics Endpoint
+  app.get("/api/meta/diagnostics", (req, res) => {
+    const status = store.getIntegrationStatus();
+    res.json({
+      connected: status.meta.connected,
+      user: status.meta.user,
+      businessManagers: status.meta.businessManagers,
+      accounts: store.metaAdAccounts,
+      campaignsCount: store.campaigns.length,
+      dailyMetricsCount: store.campaignDailyMetrics.length,
+      lastSyncAt: status.meta.lastSyncAt,
+      lastSuccessSyncAt: status.meta.lastSuccessSyncAt,
+      error: status.meta.error,
+      syncing: status.meta.syncing
+    });
+  });
+
+  // Meta Business Managers Management (Multi-BM API)
+  app.get("/api/meta/bms", (req, res) => {
+    res.json(store.getMetaBusinessManagers());
+  });
+
+  app.post("/api/meta/bms", async (req, res) => {
+    try {
+      const { name, metaBmId, accessToken, isActive } = req.body;
+      if (!metaBmId || !String(metaBmId).trim()) {
+        return res.status(400).json({ error: "O ID da Business Manager (Meta BM ID) é obrigatório." });
+      }
+      const bm = await store.addMetaBusinessManager({ name, metaBmId, accessToken, isActive });
+      res.json({ success: true, businessManager: bm, status: store.getIntegrationStatus() });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message || "Erro ao adicionar Business Manager." });
+    }
+  });
+
+  app.put("/api/meta/bms/:id", (req, res) => {
+    try {
+      const updated = store.updateMetaBusinessManager(req.params.id, req.body);
+      res.json({ success: true, businessManager: updated, status: store.getIntegrationStatus() });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message || "Erro ao atualizar Business Manager." });
+    }
+  });
+
+  app.delete("/api/meta/bms/:id", (req, res) => {
+    try {
+      const deleted = store.deleteMetaBusinessManager(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Business Manager não encontrada." });
+      }
+      res.json({ success: true, status: store.getIntegrationStatus() });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message || "Erro ao excluir Business Manager." });
+    }
+  });
+
+  app.post("/api/meta/bms/:id/test", async (req, res) => {
+    try {
+      const testResult = await store.testMetaBusinessManager(req.params.id);
+      res.json({ ...testResult, status: store.getIntegrationStatus() });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post("/api/meta/bms/:id/sync", async (req, res) => {
+    try {
+      const syncResult = await store.syncSingleBusinessManager(req.params.id);
+      res.json({ ...syncResult, status: store.getIntegrationStatus() });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Real Cakto connection test
+  app.post("/api/cakto/test-connection", async (req, res) => {
+    const credentials = {
+      apiToken: req.body?.apiToken || store.globalSettings.caktoApiToken,
+      clientId: req.body?.clientId || store.globalSettings.caktoClientId,
+      clientSecret: req.body?.clientSecret || store.globalSettings.caktoClientSecret,
+      apiUrl: req.body?.apiUrl || store.globalSettings.caktoApiUrl
+    };
+    const result = await caktoApi.testConnection(credentials);
+    res.json(result);
+  });
+
+  // Real Cakto Catalog sync (All pages)
+  app.post("/api/sync/cakto", async (req, res) => {
+    const credentials = req.body?.credentials;
+    const result = await store.syncCaktoCatalog(credentials);
+    res.json({ ...result, status: store.getIntegrationStatus() });
+  });
+
+  // Cakto Catalog list
+  app.get("/api/cakto/catalog", (req, res) => {
+    res.json({
+      products: store.caktoCatalogProducts,
+      offers: store.caktoCatalogOffers,
+      lastSyncAt: store.caktoCatalogLastSyncAt,
+      error: store.caktoLastError
+    });
+  });
+
+  // Cakto Diagnostics Endpoint
+  app.get("/api/cakto/diagnostics", (req, res) => {
+    const status = store.getIntegrationStatus();
+    res.json({
+      apiConnected: status.cakto.apiConnected,
+      catalogLastSyncAt: status.cakto.catalogLastSyncAt,
+      catalogProductsCount: store.caktoCatalogProducts.length,
+      catalogOffersCount: store.caktoCatalogOffers.length,
+      webhookActive: status.cakto.webhookActive,
+      webhookUrl: "/api/webhooks/cakto",
+      lastEventAt: status.cakto.lastEventAt,
+      lastEventType: status.cakto.lastEventType,
+      transactionsCount: store.caktoTransactions.length,
+      error: status.cakto.error,
+      syncing: status.cakto.syncing
+    });
+  });
+
+  // Automatically install webhook on user's Cakto account via Public API
+  app.post("/api/cakto/install-webhook", async (req, res) => {
+    try {
+      const webhookUrl = req.body?.webhookUrl;
+      if (!webhookUrl) {
+        return res.status(400).json({ success: false, error: "URL do webhook não informada." });
+      }
+
+      const credentials = {
+        apiToken: req.body?.apiToken || store.globalSettings.caktoApiToken,
+        clientId: req.body?.clientId || store.globalSettings.caktoClientId,
+        clientSecret: req.body?.clientSecret || store.globalSettings.caktoClientSecret,
+        apiUrl: req.body?.apiUrl || store.globalSettings.caktoApiUrl
+      };
+
+      const result = await caktoApi.createWebhook(
+        webhookUrl,
+        "Central Ads - Monitoramento & ROI",
+        [
+          "purchase_approved",
+          "pix_gerado",
+          "boleto_gerado",
+          "refund",
+          "chargeback",
+          "subscription_canceled",
+          "subscription_renewed",
+          "checkout_abandonment"
+        ],
+        credentials
+      );
+
+      if (result.success) {
+        store.caktoWebhookActive = true;
+        store.caktoLastEventAt = new Date().toISOString();
+        store.caktoLastEventType = "webhook_instalado_api";
+
+        store.integrationLogs.unshift({
+          id: `log_wh_install_${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          integration: "Cakto",
+          event: "WEBHOOK INSTALADO VIA API CAKTO",
+          status: "success",
+          message: `Webhook criado e ativado com sucesso na plataforma Cakto para a URL: ${webhookUrl}`,
+          payload: result.webhook
+        });
+      }
+
+      res.json({ ...result, status: store.getIntegrationStatus() });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // List webhooks from Cakto account
+  app.get("/api/cakto/remote-webhooks", async (req, res) => {
+    try {
+      const credentials = {
+        apiToken: store.globalSettings.caktoApiToken,
+        clientId: store.globalSettings.caktoClientId,
+        clientSecret: store.globalSettings.caktoClientSecret,
+        apiUrl: store.globalSettings.caktoApiUrl
+      };
+      const result = await caktoApi.listWebhooks(credentials);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Trigger simulated/test webhook event to verify reception
+  app.post("/api/cakto/test-webhook", (req, res) => {
+    try {
+      const samplePayload = {
+        event: "purchase_approved",
+        secret: store.globalSettings.caktoWebhookSecret || "test_secret",
+        data: {
+          id: `test_tx_${Date.now()}`,
+          refId: `cakto_test_${Math.floor(Math.random() * 10000)}`,
+          status: "approved",
+          customer: {
+            name: "Cliente Teste Cakto",
+            email: "cliente.teste@exemplo.com.br",
+            phone: "11999999999"
+          },
+          product: {
+            id: store.caktoCatalogProducts[0]?.id || "cakto_prod_teste",
+            name: store.caktoCatalogProducts[0]?.name || "Produto Teste Central Ads",
+            short_id: "prod_tst"
+          },
+          offer: {
+            id: store.caktoCatalogOffers[0]?.id || "off_teste",
+            name: store.caktoCatalogOffers[0]?.name || "Oferta Principal Teste"
+          },
+          amount: 197.00,
+          net_amount: 179.27,
+          payment_method: "pix",
+          installments: 1,
+          created_at: new Date().toISOString()
+        }
+      };
+
+      const result = store.processCaktoWebhook(samplePayload);
+      res.json({ success: true, message: "Evento de teste processado com sucesso!", result, status: store.getIntegrationStatus() });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Delete / reset Cakto Webhook configuration
+  app.delete("/api/cakto/webhook", (req, res) => {
+    try {
+      store.resetCaktoWebhook();
+      res.json({ success: true, message: "Webhook desconectado com sucesso.", status: store.getIntegrationStatus() });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Delete remote webhook from Cakto account
+  app.delete("/api/cakto/remote-webhooks/:id", async (req, res) => {
+    try {
+      const credentials = {
+        apiToken: store.globalSettings.caktoApiToken,
+        clientId: store.globalSettings.caktoClientId,
+        clientSecret: store.globalSettings.caktoClientSecret,
+        apiUrl: store.globalSettings.caktoApiUrl
+      };
+      const result = await caktoApi.deleteWebhook(req.params.id, credentials);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Disconnect / reset integration
+  app.delete("/api/integrations/:name", (req, res) => {
+    try {
+      const name = req.params.name.toLowerCase();
+      if (name === "meta") {
+        store.globalSettings.metaAccessToken = "";
+        store.metaBusinessManagers = [];
+        store.metaAdAccounts = [];
+        store.integrationLogs.unshift({
+          id: `log_meta_disc_${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          integration: "Meta",
+          event: "INTEGRACAO_DESCONECTADA",
+          status: "warning",
+          message: "Integração Meta Ads e conexões foram desconectadas. Histórico financeiro preservado.",
+          payload: {}
+        });
+      } else if (name === "cakto") {
+        store.globalSettings.caktoApiToken = "";
+        store.globalSettings.caktoClientId = "";
+        store.globalSettings.caktoClientSecret = "";
+        store.resetCaktoWebhook();
+        store.integrationLogs.unshift({
+          id: `log_cakto_disc_${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          integration: "Cakto",
+          event: "INTEGRACAO_DESCONECTADA",
+          status: "warning",
+          message: "Credenciais da Cakto foram removidas. Histórico financeiro preservado.",
+          payload: {}
+        });
+      } else if (name === "supabase") {
+        store.globalSettings.supabaseConfigured = false;
+        store.globalSettings.supabaseUrl = "";
+        store.globalSettings.supabaseAnonKey = "";
+      }
+      res.json({ success: true, message: `Integração ${name} desconectada.`, status: store.getIntegrationStatus() });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Daily Campaign Metrics Endpoint
+  app.get("/api/campaigns/daily", (req, res) => {
+    const { campaignId, accountId } = req.query;
+    let list = store.campaignDailyMetrics;
+    if (campaignId) {
+      list = list.filter(m => m.campaignId === campaignId);
+    }
+    if (accountId) {
+      list = list.filter(m => m.accountId === accountId);
+    }
+    res.json(list);
+  });
+
+  // Real Full Sync (Meta + Cakto + Supabase)
   app.post("/api/sync/all", async (req, res) => {
     try {
-      const metaResult = await store.syncMeta();
+      const [metaResult, caktoResult] = await Promise.allSettled([
+        store.syncMeta(),
+        store.syncCaktoCatalog()
+      ]);
       const status = store.getIntegrationStatus();
-      res.json({ success: metaResult.success, metaResult, status });
+      res.json({
+        success: (metaResult.status === 'fulfilled' && metaResult.value.success) || (caktoResult.status === 'fulfilled' && caktoResult.value.success),
+        metaResult: metaResult.status === 'fulfilled' ? metaResult.value : null,
+        caktoResult: caktoResult.status === 'fulfilled' ? caktoResult.value : null,
+        status
+      });
     } catch (err: any) {
       res.status(500).json({ error: err.message, status: store.getIntegrationStatus() });
     }
@@ -321,6 +641,18 @@ async function startServer() {
     }
   });
 
+  app.delete("/api/products/:id", (req, res) => {
+    try {
+      const deleted = store.deleteProduct(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Produto não encontrado." });
+      }
+      res.json({ success: true, message: "Produto excluído com sucesso. Histórico de vendas preservado." });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Erro ao excluir produto." });
+    }
+  });
+
   // 4. Meta Ads API
   app.get("/api/meta-accounts", (req, res) => {
     const accounts = store.metaAdAccounts.map(acc => {
@@ -347,14 +679,41 @@ async function startServer() {
 
       return {
         ...acc,
+        name: acc.accountName || (acc as any).name || acc.id,
+        accountName: acc.accountName || (acc as any).name || acc.id,
+        bmId: acc.bmId,
+        bmName: acc.bmName || 'BM Conectada',
         spend: Math.round(spend * 100) / 100,
         activeCampaigns: activeCount,
         totalCampaigns: accCampaigns.length,
+        lastSyncAt: (acc as any).lastSyncAt || store.metaLastSyncAt,
+        status: acc.status || 'active',
         productDistribution: distribution
       };
     });
 
     res.json(accounts);
+  });
+
+  app.delete("/api/meta-accounts/:id", (req, res) => {
+    try {
+      const deleted = store.deleteAdAccount(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Conta de anúncios não encontrada." });
+      }
+      res.json({ success: true, message: "Conta de anúncios desconectada com sucesso." });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Erro ao desconectar conta." });
+    }
+  });
+
+  app.post("/api/meta-accounts/:id/sync", async (req, res) => {
+    try {
+      const syncResult = await store.syncSingleAdAccount(req.params.id);
+      res.json({ ...syncResult, status: store.getIntegrationStatus() });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message || "Erro ao sincronizar conta." });
+    }
   });
 
   app.get("/api/campaigns", (req, res) => {
@@ -445,11 +804,53 @@ async function startServer() {
   });
 
   // 6. CAKTO WEBHOOK REAL ENDPOINT: /api/webhooks/cakto
+  // Support GET & HEAD for endpoint validation & URL health checks
+  app.get("/api/webhooks/cakto", (req, res) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.status(200).json({
+      status: "ok",
+      active: true,
+      service: "Central Ads - Cakto Webhook Receiver",
+      endpoint: "/api/webhooks/cakto",
+      message: "Endpoint operacional e pronto para receber notificações da Cakto.",
+      webhookActive: store.caktoWebhookActive,
+      lastEventAt: store.caktoLastEventAt,
+      supportedEvents: [
+        "purchase_approved",
+        "pix_gerado",
+        "boleto_gerado",
+        "refund",
+        "chargeback",
+        "subscription_canceled",
+        "subscription_renewed",
+        "checkout_abandonment"
+      ]
+    });
+  });
+
+  app.head("/api/webhooks/cakto", (req, res) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.status(200).end();
+  });
+
+  app.options("/api/webhooks/cakto", (req, res) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, HEAD, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, x-cakto-signature, x-webhook-secret");
+    res.status(200).end();
+  });
+
   app.post("/api/webhooks/cakto", (req, res) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
     try {
-      const secret = req.headers["x-cakto-signature"] || req.headers["x-webhook-secret"] || req.query.secret;
+      const secret = 
+        req.headers["x-cakto-signature"] || 
+        req.headers["x-webhook-secret"] || 
+        req.query.secret || 
+        req.body?.secret || 
+        req.body?.data?.secret;
       
-      // Validation log if secret is set and header is passed
+      // If configured secret does not match received secret
       if (store.globalSettings.caktoWebhookSecret && secret && secret !== store.globalSettings.caktoWebhookSecret) {
         store.integrationLogs.unshift({
           id: `log_err_${Date.now()}`,
@@ -463,8 +864,16 @@ async function startServer() {
         return res.status(401).json({ error: "Assinatura de webhook inválida." });
       }
 
-      const result = store.processCaktoWebhook(req.body);
-      res.status(200).json(result);
+      // Handle raw or parsed body
+      let payload = req.body;
+      if (typeof payload === "string") {
+        try {
+          payload = JSON.parse(payload);
+        } catch (_) {}
+      }
+
+      const result = store.processCaktoWebhook(payload);
+      res.status(200).json({ ...result, receivedAt: new Date().toISOString() });
     } catch (err: any) {
       store.integrationLogs.unshift({
         id: `log_crit_${Date.now()}`,
@@ -475,7 +884,8 @@ async function startServer() {
         message: `Falha ao processar payload: ${err.message}`,
         payload: { error: err.message, body: req.body }
       });
-      res.status(500).json({ error: err.message });
+      // Even on error, respond with 200 with error message to avoid Cakto disabling the webhook
+      res.status(200).json({ success: false, error: err.message });
     }
   });
 

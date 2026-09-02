@@ -28,16 +28,21 @@ export const CampaignsView: React.FC<CampaignsViewProps> = ({ products, onRefres
   const [selectedCampaignForLink, setSelectedCampaignForLink] = useState<any | null>(null);
   const [targetProductId, setTargetProductId] = useState<string>("");
 
+  const [hasError, setHasError] = useState(false);
+
   const loadCampaigns = () => {
     setLoading(true);
+    setHasError(false);
     fetch("/api/campaigns")
       .then((res) => res.json())
       .then((data) => {
-        setCampaigns(data);
+        setCampaigns(Array.isArray(data) ? data : []);
         setLoading(false);
       })
       .catch((err) => {
-        console.error(err);
+        console.error("Erro ao carregar campanhas:", err);
+        setCampaigns([]);
+        setHasError(true);
         setLoading(false);
       });
   };

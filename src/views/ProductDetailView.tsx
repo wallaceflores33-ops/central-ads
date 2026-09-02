@@ -20,9 +20,11 @@ import {
   CheckCircle2,
   AlertTriangle,
   Zap,
-  TrendingUp
+  TrendingUp,
+  Trash2
 } from "lucide-react";
 import { NavView } from "../components/Sidebar.tsx";
+import { ConfirmationModal } from "../components/ConfirmationModal.tsx";
 
 interface ProductDetailViewProps {
   productId: string;
@@ -47,6 +49,22 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
   } | null>(null);
 
   const [loading, setLoading] = useState(true);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleDeleteProduct = async () => {
+    setIsDeleting(true);
+    try {
+      const res = await fetch(`/api/products/${productId}`, { method: "DELETE" });
+      if (res.ok) {
+        onBack();
+      }
+    } catch (err) {
+      console.error("Erro ao excluir produto:", err);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   useEffect(() => {
     setLoading(true);
@@ -120,10 +138,18 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <span className="text-xs text-slate-400">
             Cakto IDs: <strong className="text-slate-200 font-mono">{product.caktoProductIds.join(", ")}</strong>
           </span>
+          <button
+            onClick={() => setIsDeleteModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-semibold transition-all cursor-pointer"
+            title="Excluir produto"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>Excluir Produto</span>
+          </button>
         </div>
       </div>
 
@@ -387,6 +413,19 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
           </table>
         </div>
       </div>
+
+      {/* Modal de Confirmação para Excluir Produto */}
+      <ConfirmationModal
+        isOpen={isDeleteModalOpen}
+        title="Tem certeza que deseja excluir este produto?"
+        itemName={product ? `${product.name} [${product.campaignCode}]` : undefined}
+        description="O produto será removido e desvinculado de suas campanhas do Meta Ads. Todas as transações da Cakto e históricos consolidados continuarão preservados no sistema."
+        confirmLabel="Excluir Produto"
+        cancelLabel="Cancelar"
+        isProcessing={isDeleting}
+        onConfirm={handleDeleteProduct}
+        onCancel={() => setIsDeleteModalOpen(false)}
+      />
     </div>
   );
 };

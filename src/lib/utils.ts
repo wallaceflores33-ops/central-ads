@@ -1,3 +1,30 @@
+import { FinancialSummary } from "../types/index.ts";
+
+export const emptyFinancialSummary: FinancialSummary = {
+  metaSpend: 0,
+  metaTaxes: 0,
+  realCost: 0,
+  totalOrders: 0,
+  approvedSales: 0,
+  itemsSold: 0,
+  mainProductRevenue: 0,
+  orderBumpRevenue: 0,
+  grossRevenue: 0,
+  netRevenue: 0,
+  effectiveRevenue: 0,
+  realCpa: 0,
+  realRoas: 0,
+  profit: 0,
+  margin: 0,
+  breakEvenCpa: 0,
+  averageTicket: 0,
+  refundsCount: 0,
+  refundsAmount: 0,
+  chargebacksCount: 0,
+  chargebacksAmount: 0,
+  refundRate: 0,
+};
+
 export function formatCurrency(value: number | undefined | null): string {
   if (value === undefined || value === null || isNaN(value)) return "R$ 0,00";
   return new Intl.NumberFormat("pt-BR", {

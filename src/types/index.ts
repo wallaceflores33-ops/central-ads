@@ -84,16 +84,78 @@ export interface Product {
   createdAt: string;
 }
 
+export interface MetaBusinessManager {
+  id: string;
+  metaBmId: string;
+  name: string;
+  accessToken?: string;
+  isActive: boolean;
+  verificationStatus?: string;
+  createdAt?: string;
+  lastSyncAt?: string | null;
+  adAccountsCount?: number;
+  campaignsCount?: number;
+  lastError?: string | null;
+  isManual?: boolean;
+}
+
 export interface MetaAdAccount {
   id: string;
   connectionId: string;
   accountName: string;
+  bmId?: string;
   bmName: string;
   currency: string;
   status: 'active' | 'disabled';
+  spendCap?: number;
   source?: 'meta_api';
   externalId?: string;
   importedAt?: string;
+}
+
+export interface CampaignDailyMetric {
+  id: string;
+  campaignId: string;
+  accountId: string;
+  date: string; // YYYY-MM-DD
+  spend: number;
+  impressions: number;
+  reach: number;
+  frequency: number;
+  clicks: number;
+  outboundClicks: number;
+  linkClicks: number;
+  ctr: number;
+  cpc: number;
+  cpm: number;
+  results: number;
+  costPerResult: number;
+  conversions: number;
+  conversionValue: number;
+  accountCurrency: string;
+}
+
+export interface CaktoCatalogOffer {
+  id: string; // Official Cakto offer ID
+  productId: string;
+  name: string;
+  price: number;
+  status: string;
+  isOrderBump?: boolean;
+  checkoutUrl?: string;
+}
+
+export interface CaktoCatalogProduct {
+  id: string; // Official Cakto product ID
+  name: string;
+  description?: string;
+  price: number;
+  status: string;
+  category?: string;
+  productType?: string;
+  imageUrl?: string;
+  createdAt?: string;
+  offers: CaktoCatalogOffer[];
 }
 
 export interface Campaign {
@@ -284,8 +346,11 @@ export type AppMode = 'production' | 'demo';
 export interface IntegrationStatus {
   meta: {
     connected: boolean;
+    user?: { id: string; name: string } | null;
+    businessManagers: MetaBusinessManager[];
     connectionName?: string;
     lastSyncAt: string | null;
+    lastSuccessSyncAt?: string | null;
     accountsCount: number;
     campaignsCount: number;
     error: string | null;
@@ -293,10 +358,17 @@ export interface IntegrationStatus {
   };
   cakto: {
     connected: boolean;
+    apiConnected: boolean;
+    catalogLastSyncAt: string | null;
+    productsCount: number;
+    offersCount: number;
     lastEventAt: string | null;
+    lastEventType?: string | null;
     transactionsCount: number;
     webhookActive: boolean;
+    webhookUrl?: string;
     error: string | null;
+    syncing: boolean;
   };
   supabase: {
     connected: boolean;
@@ -316,6 +388,9 @@ export interface GlobalSettings {
   metaAdAccountId?: string;
   caktoWebhookSecret: string;
   caktoApiToken?: string;
+  caktoClientId?: string;
+  caktoClientSecret?: string;
+  caktoApiUrl?: string;
   geminiModel: string;
   geminiAnalysisIntervalHours: number;
   minSpendForAiDecision: number;

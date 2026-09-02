@@ -203,6 +203,22 @@ export default function App() {
     }
   };
 
+  // Delete product
+  const handleDeleteProduct = async (productId: string) => {
+    try {
+      const res = await fetch(`/api/products/${productId}`, { method: "DELETE" });
+      if (res.ok) {
+        fetchDashboardData();
+        if (selectedProductId === productId) {
+          setSelectedProductId(null);
+          setCurrentView("products");
+        }
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   return (
     <div className="flex min-h-screen bg-[#030712] text-slate-200 font-sans antialiased">
       {/* Sidebar Navigation */}
@@ -313,6 +329,7 @@ export default function App() {
               products={productSummaries}
               onSelectProduct={handleSelectProduct}
               onCreateProduct={handleCreateProduct}
+              onDeleteProduct={handleDeleteProduct}
             />
           )}
 
