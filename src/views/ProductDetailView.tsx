@@ -373,7 +373,7 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
                 return (
                   <tr key={c.id} className="hover:bg-slate-800/30 transition-colors">
                     <td className="py-3 px-3">
-                      <div className="font-bold text-white">{c.name}</div>
+                      <div className="font-bold text-white">{c.campaignName}</div>
                       <div className="text-[10px] text-slate-500 font-mono">{c.id}</div>
                     </td>
                     <td className="py-3 px-3 text-slate-300">{c.accountName}</td>
@@ -395,7 +395,7 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
                       {c.results}
                     </td>
                     <td className="py-3 px-3 text-right text-slate-200">
-                      {formatCurrency(c.metaCpa)}
+                      {formatCurrency(c.costPerResult)}
                     </td>
                     <td className="py-3 px-3 text-right text-slate-200">
                       {formatPercent(c.ctr)}

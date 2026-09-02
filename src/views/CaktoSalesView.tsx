@@ -271,7 +271,7 @@ export const CaktoSalesView: React.FC<CaktoSalesViewProps> = ({ products, onRefr
                 return (
                   <tr key={t.id} className="hover:bg-slate-800/30 transition-colors">
                     <td className="py-3 px-3 text-slate-300 whitespace-nowrap">
-                      {formatDate(t.createdAt)}
+                      {formatDate(t.date)}
                     </td>
 
                     <td className="py-3 px-3">

@@ -10,7 +10,7 @@ import { PeriodFilter } from "./src/types/index.ts";
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   // Parse JSON bodies with limit for raw webhook payloads
   app.use(express.json({ limit: "5mb" }));
@@ -51,7 +51,13 @@ async function startServer() {
   app.post("/api/meta/test-connection", async (req, res) => {
     const token = req.body?.accessToken || store.globalSettings.metaAccessToken || process.env.META_ACCESS_TOKEN;
     const result = await metaApi.testAccessToken(token || "");
-    res.json(result);
+    // Normaliza para "success" (o front espera esse campo, o serviço retorna "valid")
+    res.json({
+      ...result,
+      success: result.valid,
+      name: result.user?.name,
+      id: result.user?.id
+    });
   });
 
   // Real Meta sync (Business Managers -> Ad Accounts -> Campaigns -> Daily Insights)
@@ -144,7 +150,12 @@ async function startServer() {
       apiUrl: req.body?.apiUrl || store.globalSettings.caktoApiUrl
     };
     const result = await caktoApi.testConnection(credentials);
-    res.json(result);
+    // Normaliza para "success" (o front espera esse campo, o serviço retorna "valid")
+    res.json({
+      ...result,
+      success: result.valid,
+      error: result.error || (!result.valid ? result.message : undefined)
+    });
   });
 
   // Real Cakto Catalog sync (All pages)

@@ -140,7 +140,7 @@ export const AlertsView: React.FC<AlertsViewProps> = ({ onNavigate, onRefresh })
                   </div>
                   <p className="text-xs text-slate-300 font-medium leading-relaxed">{a.message}</p>
                   <span className="text-[10px] text-slate-500 mt-1 block font-mono">
-                    {formatDate(a.createdAt)}
+                    {formatDate(a.timestamp)}
                   </span>
                 </div>
               </div>

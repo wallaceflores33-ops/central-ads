@@ -665,7 +665,19 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                         <td className="p-3 text-right font-medium">{formatCurrency(p.realCpa)}</td>
                         <td className="p-3 text-right font-bold text-indigo-400">{p.realRoas.toFixed(2)}x</td>
                         <td className="p-3 text-right font-semibold text-white">{formatCurrency(p.profit)}</td>
-                        <td className="p-3 text-center">{getHealthBadge(p.healthStatus)}</td>
+                        <td className="p-3 text-center">
+                          {(() => {
+                            const health = getHealthBadge(p.healthScore);
+                            return (
+                              <span
+                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${health.badgeClass}`}
+                              >
+                                <span className={`w-1.5 h-1.5 rounded-full ${health.dotClass}`} />
+                                {health.label}
+                              </span>
+                            );
+                          })()}
+                        </td>
                         <td className="p-3 text-center">
                           <button
                             onClick={() => onSelectProduct(p.productId)}
